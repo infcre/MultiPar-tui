@@ -24,7 +24,11 @@ extern "C" {
 #define MAX_PARITY_NUM	65535		// パリティ・ブロック数の最大値
 #define MAX_BLOCK_SIZE	0x7FFFFFFC	// 対応するブロック・サイズの最大値 2 GB
 #define SEARCH_SIZE		1048576		// リカバリ・ファイルの検査単位
-#define UPDATE_TIME		1024		// 更新間隔 ms
+#define UPDATE_TIME_DEFAULT	1024	// 更新間隔 ms (既定値)
+// port: a front end may request a faster tick through PAR2J_PROGRESS_INTERVAL,
+// which only makes the elapsed-time display refresh more often; 0 = default.
+extern int progress_tick_ms;
+#define UPDATE_TIME			(progress_tick_ms ? progress_tick_ms : UPDATE_TIME_DEFAULT)
 
 
 // グローバル変数

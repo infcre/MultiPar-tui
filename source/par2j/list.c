@@ -832,7 +832,7 @@ static int recursive_search(
 									if (list2_buf == NULL){
 										list2_len = 0;
 										list2_max = ALLOC_LEN;
-										list2_buf = (wchar_t *)malloc(list2_max * 2);
+										list2_buf = (wchar_t *)malloc(list2_max * sizeof(wchar_t));
 									}
 									if (list2_buf){
 										wchar_t *tmp_p;
@@ -840,7 +840,7 @@ static int recursive_search(
 										if (!search_file_path(list2_buf, list2_len, search_path)){	// ファイル名が重複しないようにする
 											if (list2_len + len >= list2_max){ // 領域が足りなくなるなら拡張する
 												list2_max += ALLOC_LEN;
-												tmp_p = (wchar_t *)realloc(list2_buf, list2_max * 2);
+												tmp_p = (wchar_t *)realloc(list2_buf, list2_max * sizeof(wchar_t));
 												if (tmp_p == NULL){
 													printf("realloc, %d\n", list2_max);
 													FindClose(hFind);
@@ -1026,7 +1026,7 @@ static int direct_search(
 									if (list2_buf == NULL){
 										list2_len = 0;
 										list2_max = ALLOC_LEN;
-										list2_buf = (wchar_t *)malloc(list2_max * 2);
+										list2_buf = (wchar_t *)malloc(list2_max * sizeof(wchar_t));
 									}
 									if (list2_buf){
 										wchar_t *tmp_p;
@@ -1034,7 +1034,7 @@ static int direct_search(
 										if (!search_file_path(list2_buf, list2_len, search_path)){	// ファイル名が重複しないようにする
 											if (list2_len + len >= list2_max){ // 領域が足りなくなるなら拡張する
 												list2_max += ALLOC_LEN;
-												tmp_p = (wchar_t *)realloc(list2_buf, list2_max * 2);
+												tmp_p = (wchar_t *)realloc(list2_buf, list2_max * sizeof(wchar_t));
 												if (tmp_p == NULL){
 													printf("realloc, %d\n", list2_max);
 													FindClose(hFind);

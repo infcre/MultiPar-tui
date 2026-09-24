@@ -486,7 +486,7 @@ void sort_list(
 	int off1 = 0, off2, off3, work_off = 0;
 
 	// 作業バッファーを確保する
-	work_buf = (wchar_t *)calloc(total_len, 2);
+	work_buf = (wchar_t *)calloc(total_len, sizeof(wchar_t));
 	if (work_buf == NULL)
 		return;	// 並べ替え失敗
 
@@ -536,7 +536,7 @@ void sort_list(
 	}
 
 	// 作業バッファーから戻す
-	memcpy(list, work_buf, total_len * 2);
+	memcpy(list, work_buf, total_len * sizeof(wchar_t));
 	free(work_buf);
 }
 
@@ -550,7 +550,7 @@ int add_file_path(wchar_t *filename)	// 追加するファイル名
 
 	if (list_len + len >= list_max){	// 領域が足りなくなるなら拡張する
 		list_max += ALLOC_LEN;
-		tmp_p = (wchar_t *)realloc(list_buf, list_max * 2);
+		tmp_p = (wchar_t *)realloc(list_buf, list_max * sizeof(wchar_t));
 		if (tmp_p == NULL){
 			return 1;
 		} else {
@@ -1014,16 +1014,21 @@ int copy_path_prefix(
 		if ((new_path[0] == '\\') && (new_path[1] == '\\')){	// UNC パスなら
 			if (len + PREFIX_LEN + 2 >= max_len)
 				return 0;	// バッファー・サイズが足りなくて追加できない
-			memmove(new_path + (PREFIX_LEN + 3), new_path + 1, len * 2);
+			/* port: wchar_t is 4 bytes here, upstream hard-codes 2 */
+			memmove(new_path + (PREFIX_LEN + 3), new_path + 1, len * sizeof(wchar_t));
 			new_path[PREFIX_LEN    ] = 'U';
 			new_path[PREFIX_LEN + 1] = 'N';
 			new_path[PREFIX_LEN + 2] = 'C';
 		} else {	// 通常のドライブ記号で始まるパスなら
 			if (len + PREFIX_LEN >= max_len)
 				return 0;	// バッファー・サイズが足りなくて追加できない
-			memmove(new_path + PREFIX_LEN, new_path, (len + 1) * 2);
+			/* port: wchar_t is 4 bytes here, upstream hard-codes 2 */
+			memmove(new_path + PREFIX_LEN, new_path, (len + 1) * sizeof(wchar_t));
 		}
-		memcpy(new_path, L"\\\\?\\", PREFIX_LEN * 2);
+		{ /* port: was memcpy(new_path, L"\\\\?\\", PREFIX_LEN * 2); */
+			new_path[0] = '\\'; new_path[1] = '\\';
+			new_path[2] = '?';  new_path[3] = '\\';
+		}
 	}
 
 	// 8.3形式の短いファイル名を長いファイル名に変換する
@@ -2386,6 +2391,7 @@ int enable_volume_privilege(void)
 #define MAX_NAME_LEN	69	// 経過表示のタイトルの最大文字数 (末尾の null 文字を含む)
 
 int prog_last;	// 前回と同じ進捗状況は出力しないので記録しておく
+int progress_tick_ms;	// port: elapsed-time refresh interval, 0 = UPDATE_TIME_DEFAULT
 int count_last;
 
 // ファイル・パスを短縮されたファイル名だけにしてコピーする
@@ -2449,6 +2455,92 @@ static void copy_filename(wchar_t *out, wchar_t *in)
 	out[i] = 0;
 }
 
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+/*
+ * port: machine readable progress.
+ *
+ * When PAR2J_PROGRESS is set, every progress update is also written to stderr
+ * as one JSON object per line, so a front end can follow a run without
+ * scraping the human readable "\r" text these functions print:
+ *
+ *   {"promille":425,"count":3,"phase":"Computing file hash","file":"a.bin"}
+ *
+ * promille is the progress in 0..1000 (-1 = the step has no measurable
+ * progress), count is the caller's item counter (-1 = none), phase names the
+ * step the promille refers to ("" = unknown), and file is null unless the
+ * update belongs to one input file.  A step that finishes emits one
+ * {"done":true,"phase":...} line.  Long names are truncated.  The variable
+ * unset means nothing is written at all, so the normal output is byte for byte
+ * unchanged.
+ */
+static char progress_phase[64] = {0};
+
+static int progress_events_on(void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+		enabled = (getenv("PAR2J_PROGRESS") != NULL);
+	return enabled;
+}
+
+static void set_progress_phase(const char *text)
+{
+	size_t i;
+
+	if (text == NULL)
+		text = "";
+	for (i = 0; (text[i] != 0) && (i + 1 < sizeof(progress_phase)); i++){
+		if ((text[i] == '"') || (text[i] == '\\'))
+			break;	// never emit a name that could break the JSON line
+		progress_phase[i] = text[i];
+	}
+	progress_phase[i] = 0;
+}
+
+static void progress_event_done(void)
+{
+	if (progress_events_on() == 0)
+		return;
+	fprintf(stderr, "{\"done\":true,\"phase\":\"%s\"}\n", progress_phase);
+	fflush(stderr);
+}
+
+static void progress_event(int prog_now, int count_now, wchar_t *file_name)
+{
+	char name[MAX_LEN * 3];
+	char esc[MAX_LEN * 3];
+	int i, e;
+
+	if (progress_events_on() == 0)
+		return;
+
+	if ((file_name != NULL) && (file_name[0] != 0)){
+		utf16_to_utf8(file_name, name);	// does not fail on valid UTF-16
+		e = 0;
+		for (i = 0; (name[i] != 0) && (e + 7 < (int)sizeof(esc)); i++){
+			unsigned char c = (unsigned char)name[i];
+			if ((c == '"') || (c == '\\')){
+				esc[e++] = '\\';
+				esc[e++] = (char)c;
+			} else if (c < 0x20){
+				sprintf(esc + e, "\\u%04X", c);
+				e += 6;
+			} else {
+				esc[e++] = (char)c;
+			}
+		}
+		esc[e] = 0;
+		fprintf(stderr, "{\"promille\":%d,\"count\":%d,\"phase\":\"%s\",\"file\":\"%s\"}\n",
+			prog_now, count_now, progress_phase, esc);
+	} else {
+		fprintf(stderr, "{\"promille\":%d,\"count\":%d,\"phase\":\"%s\",\"file\":null}\n",
+			prog_now, count_now, progress_phase);
+	}
+	fflush(stderr);
+}
+
 // 経過のパーセントを表示する
 // 普段は 0 を返す、キャンセル時は 0以外
 int print_progress(int prog_now)	// 表示する % 値
@@ -2483,6 +2575,7 @@ int print_progress(int prog_now)	// 表示する % 値
 	printf("%3d.%d%%\r", prog_now / 10, prog_now % 10);
 	prog_last = prog_now;
 	fflush(stdout);
+	progress_event(prog_now, -1, NULL);
 
 	return 0;
 }
@@ -2492,20 +2585,29 @@ void print_progress_text(int prog_now, char *text)
 {
 	if (prog_now < 0)	// 範囲外なら
 		return;
+	set_progress_phase(text);	// phase name for the progress event stream
 	printf("%3d.%d%% : %s\r", prog_now / 10, prog_now % 10, text);
 	prog_last = prog_now;
 	fflush(stdout);
+	progress_event(prog_now, -1, NULL);
 }
 
 // 経過のパーセントや個数やファイル名を表示する
 // 個数はマイナスなら表示しない
 int print_progress_file(int prog_now, int count_now, wchar_t *file_name)
 {
+	int counted = 0;
+
 	if ((count_now >= 0) && (count_now != count_last)){
 		printf("%d \r", count_now);	// 個数を表示する
 		count_last = count_now;
 		if (prog_now == prog_last)
 			prog_last = prog_now + 1;	// 個数の文字を上書きする
+		// port: the slice/item count is a progress update of its own, and this
+		// is the only update some steps make (prog_now == -1 returns below),
+		// so report it before that early return.
+		progress_event(prog_now, count_now, file_name);
+		counted = 1;
 	}
 
 	if (prog_now < 0)	// 範囲外なら
@@ -2549,6 +2651,8 @@ int print_progress_file(int prog_now, int count_now, wchar_t *file_name)
 	}
 	prog_last = prog_now;
 	fflush(stdout);
+	if (counted == 0)
+		progress_event(prog_now, count_now, file_name);
 
 	return 0;
 }
@@ -2564,6 +2668,7 @@ void print_progress_done(void)	// 終了と改行を表示する
 		fflush(stdout);
 		prog_last = -1;	// 進捗状況をリセットする
 	}
+	progress_event_done();
 }
 
 // キャンセルと一時停止を行う

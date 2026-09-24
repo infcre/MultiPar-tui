@@ -1323,6 +1323,12 @@ static void gf16_ssse3_block32_altmap2(unsigned char *input1, unsigned char *inp
 	}
 }
 
+// port: was compiled with -mavx2 for the whole file, but that makes GCC emit
+// VEX encodings for *all* SSE code, which SIGILLs on CPUs without AVX.
+// Keep the file at SSSE3 level and tag only the AVX2 functions instead.
+#pragma GCC push_options
+#pragma GCC target("avx2")
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 // AVX2 命令を使うには Windows 7 以降じゃないといけない
 
@@ -1768,6 +1774,8 @@ static void gf16_avx2_block32_2(unsigned char *input1, unsigned char *input2, un
 		bsize -= 32;
 	}
 }
+
+#pragma GCC pop_options
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -2248,7 +2256,7 @@ static void gf16_sse2_block256_jit(unsigned char *input, unsigned char *output, 
 		}
 		// at least 5 can come from registers
 		for (inBit = 3; inBit < 8; inBit++){
-			_MOV_OR_XOR_R_INT(2, inBit, (int32_t)movC, maskC & 1);
+			_MOV_OR_XOR_R_INT(2, inBit, movC, maskC & 1);	/* MSVC: (int32_t)movC is an lvalue cast */
 			_C_XORPS_R(0, inBit, mask1 & 1);
 			_C_PXOR_R(1, inBit, mask2 & 1);
 			mask1 >>= 1;
@@ -2956,6 +2964,9 @@ void galois_align256_multiply(
 	}
 }
 
+#pragma GCC push_options
+#pragma GCC target("avx2")
+
 // 32バイトごとに並び替えられたバッファー専用の掛け算 (AVX2 & ALTMAP)
 void galois_align32avx_multiply(
 	unsigned char *r1,	// Region to multiply (must be aligned by 32)
@@ -3022,6 +3033,7 @@ void galois_align32avx_multiply2(
 		gf16_avx2_block32_2(src1, src2, dst, len, small_table);
 	}
 }
+#pragma GCC pop_options
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 // チェックサムを計算する

@@ -344,7 +344,7 @@ void json_add_found(wchar_t *filename, int flag_external)
 	if (list3_buf == NULL){
 		list3_max = ALLOC_LEN;
 		list3_len = 0;
-		list3_buf = malloc(list3_max * 2);
+		list3_buf = malloc(list3_max * sizeof(wchar_t));
 		if (list3_buf == NULL){
 			fclose(fp_json);
 			fp_json = NULL;
@@ -352,7 +352,7 @@ void json_add_found(wchar_t *filename, int flag_external)
 		}
 	} else if (list3_len + len >= list3_max){	// 領域が足りなくなるなら拡張する
 		list3_max += ALLOC_LEN;
-		tmp_p = (wchar_t *)realloc(list3_buf, list3_max * 2);
+		tmp_p = (wchar_t *)realloc(list3_buf, list3_max * sizeof(wchar_t));
 		if (tmp_p == NULL){
 			free(list3_buf);
 			list3_buf = NULL;

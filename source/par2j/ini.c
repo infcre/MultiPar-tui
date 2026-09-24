@@ -811,7 +811,7 @@ int read_ini_file(
 	if (list_max == 0)	// ソース・ファイルの検査が完了してない
 		return 1;		// 前回の検査結果はそのままで再度検査する
 	list_len = 1;	// 先頭に不明用の null 文字を置く
-	list_buf = (wchar_t *)malloc(list_max * 2);
+	list_buf = (wchar_t *)malloc(list_max * sizeof(wchar_t));
 	if (list_buf == NULL){
 		delete_ini_file();
 		return 1;

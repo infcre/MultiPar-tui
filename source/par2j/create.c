@@ -289,8 +289,9 @@ clock_t time_start = clock();
 			if (i < len){
 				// Unicode Filename packet
 				memcpy(buf + (off + 64), files[num].id, 16);
-				len = (int)wcslen(file_name) * 2;
-				memcpy(buf + (off + 64 + 16), file_name, len);
+				/* port: the packet carries UTF-16LE code units, not the host's
+				 * 4-byte wchar_t (upstream memcpy'd the wide string directly) */
+				len = (int)utf16le_from_wcs(file_name, buf + (off + 64 + 16));
 				if (len & 3)
 					memset(buf + (off + 64 + 16 + len), 0, 2);
 				data_size = 16 + ((len + 3) & 0xFFFFFFFC);
@@ -507,8 +508,9 @@ clock_t time_start = clock();
 			if (i < len){
 				// Unicode Filename packet
 				memcpy(buf + (off + 64), files[num].id, 16);
-				len = (int)wcslen(file_name) * 2;
-				memcpy(buf + (off + 64 + 16), file_name, len);
+				/* port: the packet carries UTF-16LE code units, not the host's
+				 * 4-byte wchar_t (upstream memcpy'd the wide string directly) */
+				len = (int)utf16le_from_wcs(file_name, buf + (off + 64 + 16));
 				if (len & 3)
 					memset(buf + (off + 64 + 16 + len), 0, 2);
 				data_size = 16 + ((len + 3) & 0xFFFFFFFC);
@@ -671,8 +673,9 @@ int set_common_packet_1pass(
 			if (i < len){
 				// Unicode Filename packet
 				memcpy(buf + (off + 64), files[num].id, 16);
-				len = (int)wcslen(file_name) * 2;
-				memcpy(buf + (off + 64 + 16), file_name, len);
+				/* port: the packet carries UTF-16LE code units, not the host's
+				 * 4-byte wchar_t (upstream memcpy'd the wide string directly) */
+				len = (int)utf16le_from_wcs(file_name, buf + (off + 64 + 16));
 				if (len & 3)
 					memset(buf + (off + 64 + 16 + len), 0, 2);
 				data_size = 16 + ((len + 3) & 0xFFFFFFFC);
@@ -833,7 +836,7 @@ int measure_common_packet(
 			}
 			if (i < len){
 				// Unicode Filename packet
-				len = (int)wcslen(file_name) * 2;
+				len = (int)utf16le_from_wcs(file_name, NULL);	/* port: UTF-16LE bytes */
 				data_size = 16 + ((len + 3) & 0xFFFFFFFC);
 				off += (64 + data_size);
 				(*packet_num)++;
@@ -885,8 +888,8 @@ int set_footer_packet(
 		} else {
 			// Unicode Comment packet
 			memset(buf + (off + 64), 0, 16);
-			len = (int)wcslen(par_comment) * 2;
-			memcpy(buf + (off + 64 + 16), par_comment, len);
+			/* port: the packet carries UTF-16LE code units, not the host wchar_t */
+			len = (int)utf16le_from_wcs(par_comment, buf + (off + 64 + 16));
 			if (len & 3)
 				memset(buf + (off + 64 + 16 + len), 0, 2);
 			data_size = 16 + ((len + 3) & 0xFFFFFFFC);
@@ -935,7 +938,7 @@ int measure_footer_packet(
 			off += (64 + data_size);
 		} else {
 			// Unicode Comment packet
-			len = (int)wcslen(par_comment) * 2;
+			len = (int)utf16le_from_wcs(par_comment, NULL);	/* port: UTF-16LE bytes */
 			data_size = 16 + ((len + 3) & 0xFFFFFFFC);
 			off += (64 + data_size);
 		}

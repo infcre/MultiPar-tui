@@ -183,9 +183,9 @@ static int read_list(
 
 	list_len = 0;
 	list_max = ALLOC_LEN;
-	list_buf = (wchar_t *)malloc(list_max * 2);
+	list_buf = (wchar_t *)malloc(list_max * sizeof(wchar_t));
 	if (list_buf == NULL){
-		printf("malloc, %d\n", list_max * 2);
+		printf("malloc, %d\n", (int)(list_max * sizeof(wchar_t)));
 		return 1;
 	}
 
@@ -307,9 +307,9 @@ static int search_files(
 	if (list_buf == NULL){
 		list_len = 0;
 		list_max = ALLOC_LEN;
-		list_buf = (wchar_t *)malloc(list_max * 2);
+		list_buf = (wchar_t *)malloc(list_max * sizeof(wchar_t));
 		if (list_buf == NULL){
-			printf("malloc, %d\n", list_max * 2);
+			printf("malloc, %d\n", (int)(list_max * sizeof(wchar_t)));
 			return 1;
 		}
 	}
@@ -494,7 +494,7 @@ static int read_external_list(
 		if (!search_file_path(list2_buf, list2_len, file_path)){	// ファイル名が重複しないようにする
 			if (list2_len + len >= list2_max){ // 領域が足りなくなるなら拡張する
 				list2_max += ALLOC_LEN;
-				tmp_p = (wchar_t *)realloc(list2_buf, list2_max * 2);
+				tmp_p = (wchar_t *)realloc(list2_buf, list2_max * sizeof(wchar_t));
 				if (tmp_p == NULL){
 					fclose(fp);
 					printf("realloc, %d\n", list2_max);
@@ -543,7 +543,7 @@ static int search_external_files(
 		if (!search_file_path(list2_buf, list2_len, search_path)){	// ファイル名が重複しないようにする
 			if (list2_len + len >= list2_max){ // 領域が足りなくなるなら拡張する
 				list2_max += ALLOC_LEN;
-				tmp_p = (wchar_t *)realloc(list2_buf, list2_max * 2);
+				tmp_p = (wchar_t *)realloc(list2_buf, list2_max * sizeof(wchar_t));
 				if (tmp_p == NULL){
 					printf("realloc, %d\n", list2_max);
 					return 1;
@@ -1253,12 +1253,12 @@ ri= switch_set & 0x00040000
 		i = par2_checksum(uni_buf);
 		if (i == 0){
 			printf("Success");
-		} else if (i == 2){
-			printf("PE checksum is different");
-		} else if (i == 3){
-			printf("CRC-32 is different");
 		} else {
-			printf("Error\0thedummytext");
+			/* port: par2_checksum() compares the PE checksum and the CRC-32 of
+			 * the executable against constants baked into the Windows binary, so
+			 * an ELF build can never match them.  Report that plainly instead of
+			 * a failure that does not exist. */
+			printf("not applicable to this Linux build (code %d)", i);
 		}
 		printf("\n\n");
 		print_help();
@@ -1607,7 +1607,7 @@ ri= switch_set & 0x00040000
 					if (list2_buf == NULL){
 						list2_max = 0;	// allow list の項目数
 						list2_len = 0;
-						list2_buf = (wchar_t *)malloc(ALLOC_LEN * 2);
+						list2_buf = (wchar_t *)malloc(ALLOC_LEN * sizeof(wchar_t));
 					}
 					if (list2_buf != NULL){
 						if (tmp_p[-1] == 'a'){
@@ -2202,9 +2202,9 @@ fclose(fp);
 			int dir_len;
 			list2_len = 0;
 			list2_max = ALLOC_LEN;
-			list2_buf = (wchar_t *)malloc(list2_max * 2);
+			list2_buf = (wchar_t *)malloc(list2_max * sizeof(wchar_t));
 			if (list2_buf == NULL){
-				printf("malloc, %d\n", list2_max * 2);
+				printf("malloc, %d\n", (int)(list2_max * sizeof(wchar_t)));
 				return 1;
 			}
 

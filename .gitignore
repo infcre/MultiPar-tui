@@ -1,0 +1,26 @@
+# Linux port build artifacts (see source/par2j/Makefile)
+*.o
+*.d
+source/par2j/par2j
+source/par2j/par2j_asan
+
+# written next to the par2j binary by -vs (verify cache) and -w (JSON report)
+source/par2j/2_*.ini
+source/par2j/2_*.bin
+source/par2j/*.json
+
+# Go TUI binary (source/multipar-tui)
+source/multipar-tui/multipar-tui
+
+# Visual Studio intermediate output
+*.obj
+*.suo
+*.user
+Debug/
+Release/
+x64/
+
+# editor / OS noise
+*.swp
+*~
+.DS_Store

@@ -125,9 +125,9 @@ int search_recovery_files(void)
 
 	l_max = ALLOC_LEN;
 	recv_len = 0;
-	recv_buf = (wchar_t *)malloc(l_max * 2);
+	recv_buf = (wchar_t *)malloc(l_max * sizeof(wchar_t));
 	if (recv_buf == NULL){
-		printf("malloc, %d\n", l_max * 2);
+		printf("malloc, %d\n", (int)(l_max * sizeof(wchar_t)));
 		return 1;
 	}
 
@@ -149,7 +149,7 @@ int search_recovery_files(void)
 			}
 			if (recv_len + dir_len + len >= l_max){	// 領域が足りなくなるなら拡張する
 				l_max += ALLOC_LEN;
-				tmp_p = (wchar_t *)realloc(recv_buf, l_max * 2);
+				tmp_p = (wchar_t *)realloc(recv_buf, l_max * sizeof(wchar_t));
 				if (tmp_p == NULL){
 					FindClose(hFind);
 					printf("realloc, %d\n", l_max * 2);
@@ -183,7 +183,7 @@ int search_recovery_files(void)
 						continue;	// 長すぎるファイル名は無視する
 					if (recv_len + dir_len + len >= l_max){	// 領域が足りなくなるなら拡張する
 						l_max += ALLOC_LEN;
-						tmp_p = (wchar_t *)realloc(recv_buf, l_max * 2);
+						tmp_p = (wchar_t *)realloc(recv_buf, l_max * sizeof(wchar_t));
 						if (tmp_p == NULL){
 							FindClose(hFind);
 							printf("realloc, %d\n", l_max * 2);
@@ -227,7 +227,7 @@ int search_recovery_files(void)
 				((len > ext_len) && (_wcsicmp(list2_buf + (list2_off + len - ext_len), file_ext) == 0))){
 				if (recv_len + len >= l_max){	// 領域が足りなくなるなら拡張する
 					l_max += ALLOC_LEN;
-					tmp_p = (wchar_t *)realloc(recv_buf, l_max * 2);
+					tmp_p = (wchar_t *)realloc(recv_buf, l_max * sizeof(wchar_t));
 					if (tmp_p == NULL){
 						printf("realloc, %d\n", l_max * 2);
 						return 1;
@@ -246,9 +246,9 @@ int search_recovery_files(void)
 
 	// 探査時に除外するリストの領域を確保しておく
 	recv2_len = 0;
-	recv2_buf = (wchar_t *)malloc(recv_len * 2);
+	recv2_buf = (wchar_t *)malloc(recv_len * sizeof(wchar_t));
 	if (recv2_buf == NULL){
-		printf("malloc, %d\n", recv_len * 2);
+		printf("malloc, %d\n", (int)(recv_len * sizeof(wchar_t)));
 		return 1;
 	}
 /*{
@@ -493,9 +493,9 @@ int search_file_packet(
 
 	list_len = 1;	// 先頭に不明用の null 文字を置く
 	list_max = ALLOC_LEN;
-	list_buf = (wchar_t *)malloc(list_max * 2);
+	list_buf = (wchar_t *)malloc(list_max * sizeof(wchar_t));
 	if (list_buf == NULL){
-		printf("malloc, %d\n", list_max * 2);
+		printf("malloc, %d\n", (int)(list_max * sizeof(wchar_t)));
 		return 1;
 	}
 	list_buf[0] = 0;
@@ -691,12 +691,13 @@ printf(" packet : %s, size = %u, file_off = %I64d, off = %d\n", ascii_buf, packe
 							i = packet_size - 80;	// コメントのバイト数
 							if (i >= COMMENT_LEN * 2)
 								i = COMMENT_LEN * 2 - 2;
-							memcpy(par_comment, buf + (off + 80), i);
-							par_comment[i / 2] = 0;	// 末尾を null 文字にする
+							/* port: decode UTF-16LE instead of copying host wchar_t units */
+							utf16le_to_wcs(buf + (off + 80), (size_t)i, par_comment, COMMENT_LEN);
 						} else if ((memcmp(buf + (off + 48), "PAR 2.0\0UniFileN", 16) == 0) && (packet_size - 80 < MAX_LEN * 2)){
 							// Unicode Filename packet
-							memset(uni_buf, 0, sizeof(uni_buf));
-							memcpy(uni_buf, buf + (off + 80), packet_size - 80);
+							/* port: the packet carries UTF-16LE code units, not the host's
+							 * 4-byte wchar_t (upstream copied the bytes straight across) */
+							utf16le_to_wcs(buf + (off + 80), packet_size - 80, uni_buf, MAX_LEN);
 							for (i = 0; i < file_num; i++){
 								if (memcmp(buf + (off + 64), files[i].id, 16) == 0)	// File ID が一致すれば
 									break;

@@ -577,3 +577,26 @@ Then, it is safe to use this with /b or /br.
  If you want to see hash of files in recovery file, use this.
 You can compare yourself with other hash checking soft.
 
+
+Linux port additions (par2j only) :
+ The command line, the options and the disk format are unchanged.  These
+ environment variables are new; none of them is required.
+
+ PAR2J_TRACE=1
+  Print every path lookup (GetFileAttributes, FindFirstFile, GetFullPathName,
+  GetLongPathName) with its conversion result to stderr.  This is the main
+  debugging aid on a system without gdb.
+
+ PAR2J_PROGRESS=1
+  Also write each progress update to stderr as one JSON object per line, for a
+  front end that does not want to scrape the "\r" redrawing text:
+    {"promille":425,"count":-1,"phase":"Creating recovery slice","file":null}
+    {"done":true,"phase":"Recovering slice"}
+  promille is 0..1000 (-1 = the step has no measurable progress), count is the
+  caller's item counter (-1 = none), phase names the step, file is null unless
+  the update belongs to one input file.  Unset means nothing is written at all,
+  so the normal output stays byte for byte identical.
+
+ PAR2J_PROGRESS_INTERVAL=<ms>
+  Refresh interval of the progress display, 20..10000 (default 1024).  A small
+  value only makes the display update more often.
