@@ -20,6 +20,9 @@ Debug/
 Release/
 x64/
 
+# release assets built by hand (tarballs with par2j + multipar-tui binaries)
+dist/
+
 # editor / OS noise
 *.swp
 *~
