@@ -4,6 +4,11 @@ par2j 的终端前端（TUI）。它**驱动 `par2j` 子进程**，自己不链�
 磁盘上的 PAR2 格式、GF16 运算、路径处理仍然只有 `par2j` 一个实现，也就是回归
 测试覆盖的那一个。前端只负责收集参数、启动进程、读进度、把结果翻译成人话。
 
+定位说明：Linux 上已有成熟的 PAR2 命令行实现（par2cmdline，发行版里叫 `par2`），
+单纯修集合用那个更省事。本前端的价值是**交互式的集合浏览 / 选文件 / 选冗余并跑
+par2j**，这在前者是缺的；另外它只驱动 MultiPar 系的 `par2j`，与其他实现的
+互操作未实测（见 `source/par2j/MANUAL.zh.md` 第 10 节）。
+
 ```
 multipar-tui                               # 在当前目录进入 TUI
 multipar-tui --dir /data/backup            # 指定工作目录
