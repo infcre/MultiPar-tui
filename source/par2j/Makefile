@@ -89,9 +89,15 @@ clean:
 # target stops mattering entirely - only the CPU architecture and the kernel
 # ABI do. The OpenCL loader goes through dlopen(); when that cannot work the
 # code already falls back to the CPU path, so the GPU option stays inert here.
+#
+# -s strips the result. An unstripped static binary is nearly twice the size
+# (2.5 MB against 1.3 MB here) and its DWARF records the directory it was
+# built in, which is both information leakage and the reason two clones of the
+# same tag would not produce identical bytes. Debug a build that way with
+# "make" instead, which keeps the symbols.
 static:
 	$(MAKE) --no-print-directory clean
-	$(MAKE) --no-print-directory LDFLAGS="-static" all
+	$(MAKE) --no-print-directory LDFLAGS="-static -s" all
 
 # Diagnostic build with AddressSanitizer: make asan
 #

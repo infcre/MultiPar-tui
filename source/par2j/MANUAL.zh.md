@@ -76,9 +76,10 @@ make clean
 
 `make static` 把 libc 链进二进制、不生成 ELF interpreter（`readelf -l` 里 `INTERP`
 段为 0），于是目标机用 musl 还是老 glibc 都无所谓，只要架构是 x86-64、内核能跑
-即可。**给 NAS、OpenWrt、容器或来历不明的机器用，就发静态版。** 代价：体积从约
-1.4 MB 涨到 2.5 MB；`-lc<n>` 的 OpenCL 路径走 `dlopen()`，静态下加载不了 libOpenCL，
-会干净地退回 CPU 路径（GPU 加速本来也未经验证）。
+即可。**给 NAS、OpenWrt、容器或来历不明的机器用，就发静态版。** `make static` 会顺带
+`strip`（产物约 1.3 MB；不 strip 是 2.5 MB，而且 DWARF 里会记下构建时的目录，导致同一个
+tag 在不同路径下编出不一样的字节）。剩下的代价：`-lc<n>` 的 OpenCL 路径走 `dlopen()`，
+静态下加载不了 libOpenCL，会干净地退回 CPU 路径（GPU 加速本来也未经验证）。
 
 前端同理，见下面构建 Go 那段和 `source/multipar-tui/README.md`。
 
@@ -135,6 +136,7 @@ create 时文件名以**正斜杠相对路径**存入集合（如 `src/a/b/c/dee
 
 | 选项 | 恢复块 | 冗余率 | 恢复文件 | 实际能修 |
 |---|---|---|---|---|
+| **不给 `-rr`** | **0** | 0% | 0 | **什么也修不了**（`r` 报 rc=12） |
 | `-rr1` | 2 | 1.00% | 1 | ~2 片 |
 | `-rr3` | 6 | 2.95% | 1 | 实测修好 3 片（失 10 片则报 `Need 4 more slice(s)`，rc=12） |
 | `-rr25` | 50 | 24.63% | 5 | 实测修好 10 片 |
@@ -142,6 +144,18 @@ create 时文件名以**正斜杠相对路径**存入集合（如 `src/a/b/c/dee
 
 结论："3% 也能生成和还原"成立，但 3% 只能救少量分片。要抗"删掉一整个文件"，
 先算清那个文件有多少片，再让 `-rr` 给够块数（或直接用 `-rn<n>` 指定块数）。
+
+**最阴的一个坑：一整个冗余选项都不给。** `c` 仍返回 rc=0 并打印 `Created
+successfully`，但只写主文件——实测 30000 字节的输入建出 740 字节的 `n.par2`，
+**没有任何 `.vol*.par2`**，一个恢复块也没有，事后 `r` 只能报 rc=12。上游文档
+（`Command_par2j.txt:26` 只有一句 `/rr<n>: Rate of redundancy (%)`）没写这个默认值，
+GUI 那边总是带着默认冗余，所以命令行很容易误以为跟它一样。建完请习惯性地确认一句：
+
+```bash
+par2j l backup.par2 | grep "PAR File total size"   # 或直接 ls *.vol*.par2
+```
+
+只列出 `.par2` 主文件自己、没有 `vol` 体的，就是白建了一个校验清单。
 
 ---
 
@@ -401,6 +415,7 @@ cd source/multipar-tui && ./smoke.sh            # 前端：plain 全流程 + pty
 | `input file is not found` | 源文件不在 par2 所在目录 → 校验/修复也要加 `-d<目录>`；文件名里有非 UTF-8 字节则不支持 |
 | 相对路径报 `input file is not found, <par2目录>\<输入>` | 相对输入路径按 **`.par2` 所在目录**解析，不是当前目录（见 4.5） | 改用绝对路径 |
 | `c` 返回 rc=0、打印 `Created successfully`，但 `l` 里只有一条 0 字节记录 | 输入目录写了**尾斜杠**（`/data/src/`），上游按“只登记该文件夹、不递归”处理（见 4.5） | 去掉尾斜杠重建；或走 `multipar-tui`，它会自动去 |
+| `c` 报 `Created successfully` 但 `r` 说块不够 | 建的时候**没给 `-rr`**，集合里零恢复块（见 3.1） | 加 `-rr<n>` 重建，用 `l` 确认有 `.vol*.par2` |
 | 报 `Need N more slice(s)` 却觉得应该能修 | 先数一下丢了多少片：丢的是**分片数**不是文件数。一个 6 MB 文件在 `-ss716800` 下是 9 片，而 `-rr10` 只给 10% 恢复块。用 `par2j l` 看 `Input File Slice count` 和 `Recovery Slice count` |
 | 修复成功但脚本判成失败 | 退出码是 16，不是 0 |
 | 路径相关的怪现象 | `PAR2J_TRACE=1` 看路径解析。历史上一个"同一目录多一个字符就成功/失败"的 bug 就是 `\\?\` 前缀插错位置吃掉了文件名 |

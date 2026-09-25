@@ -20,13 +20,14 @@ be repaired on the spot with no restore workflow.
 ```sh
 cd source/par2j && make -j4          # -> ./par2j        (gcc, make, pthread)
 cd source/multipar-tui && CGO_ENABLED=0 go build -o multipar-tui .
-cd source/par2j && bash test_par2j.sh   # 12 scenarios / 44 assertions
+cd source/par2j && bash test_par2j.sh   # 12 scenarios / 52 assertions
 ```
 
 **Copying the binary to another machine? Build it statically:**
 
 ```sh
-cd source/par2j && make -j4 static   # -> ./par2j with no ELF interpreter at all
+cd source/par2j && make static          # -> ./par2j, no ELF interpreter, stripped
+cd source/multipar-tui && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o multipar-tui .
 ```
 
 A plain `make` records the build host's glibc in the symbol version table - gcc 14
@@ -48,6 +49,17 @@ reach libOpenCL from a static binary - it falls back to the CPU code cleanly.
 ./par2j v backup.par2                            # verify
 ./par2j r -vd"$HOME/.cache" -vs1 backup.par2     # repair
 ```
+
+Two silent traps, both now covered by assertions in `test_par2j.sh`:
+
+- **There is no default redundancy.** `c` with no `-rr`/`-rn`/`-rp` exits 0 and
+  prints `Created successfully`, but writes only the main `.par2` with zero
+  recovery blocks — nothing to repair with. Check `par2j l` lists a
+  `.vol*.par2` before trusting a set.
+- **A trailing separator means "this folder itself", not "what's inside it".**
+  `c backup.par2 /data/dir/` records one 0-byte entry and skips the tree, still
+  exiting 0. That is upstream intent, not a porting bug; `multipar-tui` strips
+  trailing separators so the front end cannot produce a hollow backup by accident.
 
 Two things that bite: block size is `-ss`, not `-s`; and a successful repair
 exits **16**, not 0 (the exit code is a bitmask — see the manual). Options
