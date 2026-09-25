@@ -22,8 +22,15 @@ multipar-tui --plain --op v --par p.par2   # 不进 TUI，跑一次并打印进�
 ## 构建
 
 ```bash
-go build -o multipar-tui .     # Go 1.24+；依赖 bubbletea、lipgloss
+# Go 1.24+；依赖 bubbletea、lipgloss
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o multipar-tui .
 ```
+
+`CGO_ENABLED=0` 不是可有可无的。Go 在 Linux 上默认开 cgo，产物会带
+`interpreter /lib64/ld-linux-x86-64.so.2`，到 musl 系统（OpenWrt、Alpine）上就是
+「打不开」。关掉 cgo 后 `file` 报 `statically linked`，且不依赖构建机的 glibc 版本
+（本项目自己用不到 DNS/用户查询那些需要 NSS 的路径）。`-s -w` 只为压发布体积，
+本地调试可以去掉。
 
 ## 键盘
 

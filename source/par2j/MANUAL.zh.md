@@ -59,21 +59,50 @@ ADS、代码页/控制台 API（改为 UTF-8）、OpenCL 驱动路径（本机�
 
 ```bash
 cd source/par2j
-make                # 约 40 秒，产出 ./par2j
+make                # 约 40 秒，产出 ./par2j（动态链接，绑构建机的 glibc）
+make static         # 产出无 interpreter 的静态 ./par2j（见 2.1）
 make asan           # 诊断构建 → ./par2j_asan（慢 5~10 倍，之后再 make clean 再 make）
 make clean
 ```
+
+### 2.1 `make` 与 `make static` 怎么选
+
+动态版把 libc 留在机器上，因此**只能在 glibc 不低于构建机版本的环境里跑**。本仓库
+构建机上 gcc 14 会把 `strtol`/`fscanf` 一类调用重定向到 glibc 2.38 新加的
+`__isoc23_*` 别名，`stat64`/`pthread_*` 则落在 2.33/2.34，所以产物的符号版本要求是
+**glibc ≥ 2.38**。拿到别的机器上常见的报错是
+`/lib64/ld-linux-x86-64.so.2: not found` 或 `GLIBC_2.38 not found`；**OpenWrt、Alpine
+这类用 musl 的系统根本不满足这个前提**。
+
+`make static` 把 libc 链进二进制、不生成 ELF interpreter（`readelf -l` 里 `INTERP`
+段为 0），于是目标机用 musl 还是老 glibc 都无所谓，只要架构是 x86-64、内核能跑
+即可。**给 NAS、OpenWrt、容器或来历不明的机器用，就发静态版。** 代价：体积从约
+1.4 MB 涨到 2.5 MB；`-lc<n>` 的 OpenCL 路径走 `dlopen()`，静态下加载不了 libOpenCL，
+会干净地退回 CPU 路径（GPU 加速本来也未经验证）。
+
+前端同理，见下面构建 Go 那段和 `source/multipar-tui/README.md`。
+
+### 2.2 指令集基线：为什么它能开在任何 x86-64 上
+
+默认构建只要求 **SSE2**，也就是 x86-64 基线，所以不会因为 CPU 新旧而启动失败。
+更高一档的指令集（SSSE3 / SSE4.1 / PCLMUL / AVX2）全部包在按函数生效的
+`#pragma GCC target` 里，并由运行时 `cpu_flag` 判断是否进入。这一点不是推论：把全部
+`.o` 反汇编扫一遍，SSE3 以上的高位指令只出现在 `gf16_ssse3_block16u`、
+`galois_align32avx_multiply`、`*altmap256` 这类被护栏保护的函数里，加了
+`-msse4.1 -mpclmul` 的 `crc.o` 和加了 `-msse3` 的 `phmd5s.o` / `phmd5a.o` 里一条都没有。
 
 依赖：gcc、make、binutils 里的 `objcopy`（用来把 OpenCL 源码 `source.cl` 嵌进二进制）。
 源码里有头文件内的 tentative definition，所以 Makefile 用了 `-fcommon`；
 `gf16.c` 里的 AVX2 函数用 `#pragma GCC target("avx2")` 单独包裹，在没有 AVX 的
 CPU 上靠运行时 `cpu_flag` 判断才进入——整文件加 `-mavx2` 会让这种机器直接 SIGILL。
 
-前端需要 Go（本机装在 `~/.local/go`）：
+前端需要 Go（本机装在 `~/.local/go`）。`CGO_ENABLED=0` 是必需的，不是风格问题：
+Go 在 Linux 上默认开 cgo，产出的二进制同样带着 glibc 的 interpreter，在 OpenWrt 上
+打不开：
 
 ```bash
 export PATH="$HOME/.local/go/bin:$PATH"
-cd source/multipar-tui && go build -o multipar-tui .
+cd source/multipar-tui && CGO_ENABLED=0 go build -o multipar-tui .
 ```
 
 ---

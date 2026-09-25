@@ -19,9 +19,27 @@ be repaired on the spot with no restore workflow.
 
 ```sh
 cd source/par2j && make -j4          # -> ./par2j        (gcc, make, pthread)
-cd source/multipar-tui && go build   # -> ./multipar-tui (drives ./par2j as a child process)
+cd source/multipar-tui && CGO_ENABLED=0 go build -o multipar-tui .
 cd source/par2j && bash test_par2j.sh   # 12 scenarios / 44 assertions
 ```
+
+**Copying the binary to another machine? Build it statically:**
+
+```sh
+cd source/par2j && make -j4 static   # -> ./par2j with no ELF interpreter at all
+```
+
+A plain `make` records the build host's glibc in the symbol version table - gcc 14
+routes `strtol`/`fscanf` to the `__isoc23_*` aliases that only glibc 2.38 has - so
+the result fails on older distributions with `GLIBC_2.38 not found`, and on musl
+systems (**OpenWrt, Alpine**) there is no `/lib64/ld-linux-x86-64.so.2` to load in
+the first place, which looks like "the file won't open". `make static` carries its
+own libc, so only the CPU architecture and the kernel matter. Usethe same reason. Both flags are what the release assets are built with. Nothing
+above the x86-64 baseline is required to start: SSSE3, SSE4.1, PCLMUL and AVX2 are
+all behind per-function `#pragma GCC target` and a runtime `cpu_flag` check, so the
+binary also runs on CPUs without AVX (disassembly-verified, see manual §2.2). Static
+linking costs about 1 MB and leaves the GPU path inert, since `dlopen()` cannot
+reach libOpenCL from a static binary - it falls back to the CPU code cleanly.
 
 ## Use
 

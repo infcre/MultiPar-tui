@@ -40,7 +40,9 @@ if [ ! -x "$PAR2J" ]; then
 fi
 
 echo "== build"
-go build -o multipar-tui . || exit 1
+# CGO_ENABLED=0 keeps the binary free of a glibc interpreter, the same flag the
+# release build uses - see README.
+CGO_ENABLED=0 go build -o multipar-tui . || exit 1
 check "binary built" ok ok
 
 work=$(mktemp -d)

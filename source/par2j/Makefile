@@ -1,6 +1,7 @@
 # Native Linux build of par2j -- MultiPar's command line PAR2 client.
 #
 #   make          build ./par2j
+#   make static     build ./par2j with no dynamic loader (musl/older glibc hosts)
 #   make WARN=    build quietly (errors only), useful for the first bring-up
 #   make clean
 #
@@ -32,6 +33,7 @@ WARN    := -Wall \
            -Wno-type-limits -Wno-empty-body -Wno-unused-value \
            -Wno-dangling-pointer -Wno-array-compare -Wno-calloc-transposed-args
 CFLAGS  ?= $(BASE) $(WARN)
+LDFLAGS ?=
 LDLIBS  := -pthread -ldl -lm
 
 TARGET  := par2j
@@ -62,7 +64,7 @@ CLRES_O    := source_cl.res.o
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(CLRES_O)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(CLRES_O) $(LDLIBS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(CLRES_O) $(LDFLAGS) $(LDLIBS)
 
 $(CLRES_O): $(KERNEL_SRC)
 	objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
@@ -76,6 +78,20 @@ $(CLRES_O): $(KERNEL_SRC)
 
 clean:
 	rm -f $(OBJS) $(CLRES_O) $(TARGET)
+
+# Fully static build: make static
+#
+# The default (dynamic) binary needs a glibc at least as new as the build
+# host's, because gcc redirects strto*/fscanf to the __isoc23_* aliases added
+# in glibc 2.38 and stat64/pthread symbols to 2.33/2.34 ones. That is fatal on
+# musl systems (Alpine, OpenWrt) and on older distributions. A static binary
+# carries its own libc and has no ELF interpreter, so the C library on the
+# target stops mattering entirely - only the CPU architecture and the kernel
+# ABI do. The OpenCL loader goes through dlopen(); when that cannot work the
+# code already falls back to the CPU path, so the GPU option stays inert here.
+static:
+	$(MAKE) --no-print-directory clean
+	$(MAKE) --no-print-directory LDFLAGS="-static" all
 
 # Diagnostic build with AddressSanitizer: make asan
 #
@@ -93,4 +109,4 @@ asan:
 	        LDLIBS="$(LDLIBS) -fsanitize=address"
 	mv -f $(TARGET) par2j_asan
 
-.PHONY: all asan clean
+.PHONY: all asan static clean
