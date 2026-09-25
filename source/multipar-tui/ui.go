@@ -476,7 +476,7 @@ func (m *model) viewProgress() string {
 	}
 	b.WriteString("\n")
 	if m.note != "" {
-		b.WriteString(styleDim.Render("   " + truncate(m.note, m.width-4)) + "\n")
+		b.WriteString(styleDim.Render("   "+truncate(m.note, m.width-4)) + "\n")
 	}
 	return b.String()
 }

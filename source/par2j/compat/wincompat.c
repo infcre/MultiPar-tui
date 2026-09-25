@@ -2866,13 +2866,59 @@ extern int wmain(int argc, wchar_t **argv);
  * into the virtual-drive form so they are treated as file names.
  *
  * "/d..." and "/vd..." carry an inline path and are left alone: their value is
- * normalised later by GetFullPathName().
+ * normalised later by GetFullPathName().  That collides with every real absolute
+ * path whose first directory begins with d -- /data, /dev and /disk1 all read as
+ * "-d ata/..." at first glance, so the file system has to break the tie: an
+ * argument that exists (or whose parent directory exists, which is how a new
+ * .par2 file is named) is a path, anything else keeps the option reading.
  */
+static int narrow_is_dir(const char *p)
+{
+	struct stat st;
+
+	if (p[0] == 0) return 0;
+	if (stat(p, &st) != 0) return 0;
+	return S_ISDIR(st.st_mode) ? 1 : 0;
+}
+
+static int wide_path_exists(const wchar_t *wpath, int want_dir)
+{
+	char p[PATH_MAX];
+
+	w32_path_to_posix(wpath, p, sizeof(p));
+	if (!want_dir)
+		return (p[0] != 0 && access(p, F_OK) == 0) ? 1 : 0;
+	return narrow_is_dir(p);
+}
+
+static int wide_parent_is_dir(const wchar_t *wpath)
+{
+	char p[PATH_MAX];
+	size_t n;
+
+	w32_path_to_posix(wpath, p, sizeof(p));
+	n = strlen(p);
+	while (n > 1 && p[n - 1] == '/') n--;	/* ignore a trailing separator */
+	while (n > 1 && p[n - 1] != '/') n--;	/* step back to the parent */
+	if (n <= 1) return 0;			/* only the root would be left */
+	p[n - 1] = 0;
+	return narrow_is_dir(p);
+}
+
 static int is_inline_path_option(const wchar_t *a)
 {
-	if (wcsncmp(a, L"/vd", 3) == 0 && wcschr(a + 3, L'/') != NULL) return 1;
-	if (wcsncmp(a, L"/d", 2) == 0 && wcschr(a + 2, L'/') != NULL) return 1;
-	return 0;
+	const wchar_t *value;
+
+	if (wcsncmp(a, L"/vd", 3) == 0)
+		value = a + 3;
+	else if (wcsncmp(a, L"/d", 2) == 0)
+		value = a + 2;
+	else
+		return 0;
+
+	if (wcschr(value, L'/') == NULL) return 0;	/* no separator: plain option */
+	if (wide_path_exists(a, 0) || wide_parent_is_dir(a)) return 0;
+	return 1;
 }
 
 static void arg_to_windows(wchar_t *dst, const wchar_t *src, size_t dstmax)

@@ -107,7 +107,7 @@ LC_ALL=C "$BIN" r "$S1/rery.par2" > "$WORK/repair1.log" 2>&1
 check "repair exit status (16 = repaired)" "$?" 16
 grep -q 'Repaired successfully' "$WORK/repair1.log" && ok 'reports Repaired successfully' \
 	|| { bad 'reports Repaired successfully'; sed 's/^/      /' "$WORK/repair1.log"; }
-( cd "$S1" && md5sum -c --status before.md5 ) && ok 'all files restored bit-exactly' \
+( cd "$S1" && md5sum -c before.md5 > /dev/null 2>&1 ) && ok 'all files restored bit-exactly' \
 	|| bad 'all files restored bit-exactly'
 LC_ALL=C "$BIN" v "$S1/rery.par2" > "$WORK/repair1v.log" 2>&1
 grep -q 'All Files Complete' "$WORK/repair1v.log" && ok 'verifies after repair' \
@@ -122,7 +122,7 @@ LC_ALL=C "$BIN" r "$S2/rery.par2" > "$WORK/repair2.log" 2>&1
 check "repair exit status (16 = repaired)" "$?" 16
 grep -q 'Repaired successfully' "$WORK/repair2.log" && ok 'reports Repaired successfully' \
 	|| { bad 'reports Repaired successfully'; sed 's/^/      /' "$WORK/repair2.log"; }
-( cd "$S2" && md5sum -c --status before.md5 ) && ok 'deleted file restored bit-exactly' \
+( cd "$S2" && md5sum -c before.md5 > /dev/null 2>&1 ) && ok 'deleted file restored bit-exactly' \
 	|| bad 'deleted file restored bit-exactly'
 
 # 3) not enough recovery slices: 5 slices lost (f1 + f3 keep only their file
@@ -148,7 +148,7 @@ LC_ALL=C "$BIN" r "$VOL" > "$WORK/repair4.log" 2>&1
 check "volume-only repair exit status" "$?" 16
 grep -q 'Repaired successfully' "$WORK/repair4.log" && ok 'volume-only repair' \
 	|| { bad 'volume-only repair'; sed 's/^/      /' "$WORK/repair4.log"; }
-( cd "$S4" && md5sum -c --status before.md5 ) && ok 'volume-only repair bit-exact' \
+( cd "$S4" && md5sum -c before.md5 > /dev/null 2>&1 ) && ok 'volume-only repair bit-exact' \
 	|| bad 'volume-only repair bit-exact'
 
 # ------------------------------------------------ special (Unicode) filenames
@@ -183,19 +183,35 @@ done
 # The Unicode packets must hold UTF-16LE code units: 中文 is 2d 4e 87 65 and the
 # comment 中文注释 is 2d 4e 87 65 e8 6c ca 91.  Storing the host's 4-byte
 # wchar_t instead would give 2d 4e 00 00 ..., so check both directions.
-HEX=$(cat "$SU"/rery*.par2 | od -An -tx1 -v | tr -d ' \n')
-case "$HEX" in
-*2d4e8765*) ok 'Unicode Filename packet holds UTF-16LE' ;;
-*) bad 'Unicode Filename packet holds UTF-16LE' ;;
-esac
-case "$HEX" in
-*2d4e0000*) bad "Unicode packet has 4-byte wchar_t units" ;;
-*) ok 'no 4-byte wchar_t units in the packets' ;;
-esac
-case "$HEX" in
-*2d4e8765e86cca91*) ok 'Unicode Comment packet holds UTF-16LE' ;;
-*) bad 'Unicode Comment packet holds UTF-16LE' ;;
-esac
+# BusyBox builds do not always install od(1), so hexdump is the stand-in; when
+# neither tool exists the packet bytes cannot be inspected and that is reported
+# as a skip, not a failure (the visible behaviour is covered by the checks above).
+packet_hex() {
+	if command -v od >/dev/null 2>&1; then
+		cat "$@" | od -An -tx1 -v | tr -d ' \n'
+	elif command -v hexdump >/dev/null 2>&1; then
+		hexdump -ve '1/1 "%02x"' "$@"
+	else
+		return 1
+	fi
+}
+HEX=$(packet_hex "$SU"/rery*.par2)
+if [ -z "$HEX" ]; then
+	printf '  skip  neither od nor hexdump can dump the packets here\n'
+else
+	case "$HEX" in
+	*2d4e8765*) ok 'Unicode Filename packet holds UTF-16LE' ;;
+	*) bad 'Unicode Filename packet holds UTF-16LE' ;;
+	esac
+	case "$HEX" in
+	*2d4e0000*) bad "Unicode packet has 4-byte wchar_t units" ;;
+	*) ok 'no 4-byte wchar_t units in the packets' ;;
+	esac
+	case "$HEX" in
+	*2d4e8765e86cca91*) ok 'Unicode Comment packet holds UTF-16LE' ;;
+	*) bad 'Unicode Comment packet holds UTF-16LE' ;;
+	esac
+fi
 
 LC_ALL=C "$BIN" v "$SU/rery.par2" > "$WORK/uni_verify.log" 2>&1
 check 'verify exit status' "$?" 0
@@ -208,7 +224,7 @@ grep -qF 'Comment : 中文注释😀' "$WORK/uni_verify.log" \
 rm -f "$SU/$U1" "$SU/$U2"
 LC_ALL=C "$BIN" r "$SU/rery.par2" > "$WORK/uni_repair.log" 2>&1
 check 'repair exit status (16 = repaired)' "$?" 16
-( cd "$SU" && md5sum -c --status before.md5 ) && ok 'Unicode files restored bit-exactly' \
+( cd "$SU" && md5sum -c before.md5 > /dev/null 2>&1 ) && ok 'Unicode files restored bit-exactly' \
 	|| bad 'Unicode files restored bit-exactly'
 [ -f "$SU/$U1" ] && [ -f "$SU/$U2" ] && ok 'restored names match byte for byte' \
 	|| bad 'restored names match byte for byte'
@@ -237,6 +253,55 @@ LC_ALL=C "$BIN" v "$SD/s.par2" > "$WORK/dotv.log" 2>&1
 check 'verify exit status' "$?" 0
 grep -qF 'All Files Complete' "$WORK/dotv.log" && ok 'trailing dot/space names still resolve' \
 	|| { bad 'trailing dot/space names still resolve'; sed 's/^/      /' "$WORK/dotv.log"; }
+
+# An absolute path whose first directory starts with "d" (/data, /dev, /disk1)
+# looks exactly like the "/d<dir>" option until the file system is consulted.
+# It has to be treated as a path, while -vd<existing dir> still has to be the
+# option, so both halves are pinned here.
+echo '== absolute paths starting with /d'
+DCACHE="$WORK/cache"
+mkdir -p "$DCACHE"
+LC_ALL=C "$BIN" v -vd"$DCACHE/" -vs1 "$BASE/rery.par2" > "$WORK/dopt.log" 2>&1
+check '-vd<dir> still parsed as an option' "$?" 0
+ls "$DCACHE"/2_*.ini >/dev/null 2>&1 && ok 'the option wrote its cache file where asked' \
+	|| bad 'the option wrote its cache file where asked'
+
+DROOT=/dev/shm/par2j-$$
+if mkdir -p "$DROOT/tree/子目录" 2>/dev/null; then
+	head -c $SLICE /dev/urandom > "$DROOT/tree/d1.bin"
+	head -c 1234 /dev/urandom > "$DROOT/tree/子目录/d2.bin"
+	( cd "$WORK" && LC_ALL=C "$BIN" c -ss$SLICE -rr100 "$DROOT/d.par2" "$DROOT/tree" ) > "$WORK/droot.log" 2>&1
+	check 'create exit status under /dev/shm' "$?" 0
+	rm -rf "$DROOT/tree"
+	LC_ALL=C "$BIN" r "$DROOT/d.par2" > "$WORK/drootr.log" 2>&1
+	check 'repair exit status under /dev/shm (16 = repaired)' "$?" 16
+	[ -f "$DROOT/tree/d1.bin" ] && [ -f "$DROOT/tree/子目录/d2.bin" ] \
+		&& ok 'directory tree rebuilt from a /d path' \
+		|| bad 'directory tree rebuilt from a /d path'
+	rm -rf "$DROOT"
+else
+	printf '  skip  %s is not writable\n' "$DROOT"
+fi
+
+# An input that ends with a separator means "record this empty folder, do not
+# look inside it" (the first branch of search_files() in par2_cmd.c), so the set
+# comes out 292 bytes with no recovery volume and still says "Created
+# successfully".  This is upstream behaviour on Windows as well, so it is pinned
+# here rather than changed; the front end strips the separator instead.
+echo '== trailing separator records the folder, not its contents'
+TS="$WORK/tailslash"
+mkdir -p "$TS/src"
+head -c 300000 /dev/urandom > "$TS/src/x.bin"
+( cd "$TS" && LC_ALL=C "$BIN" c -ss$SLICE -rr50 plain.par2 src ) > /dev/null 2>&1
+( cd "$TS" && LC_ALL=C "$BIN" c -ss$SLICE -rr50 slash.par2 src/ ) > /dev/null 2>&1
+( cd "$TS" && LC_ALL=C "$BIN" l plain.par2 ) > "$WORK/ts_plain.log" 2>&1
+( cd "$TS" && LC_ALL=C "$BIN" l slash.par2 ) > "$WORK/ts_slash.log" 2>&1
+grep -qF '"src/x.bin"' "$WORK/ts_plain.log" && ok 'a folder name without a separator searches inside' \
+	|| bad 'a folder name without a separator searches inside'
+grep -qF '"src/x.bin"' "$WORK/ts_slash.log" && bad 'a trailing separator skips the contents' \
+	|| ok 'a trailing separator skips the contents'
+grep -qE 'Input File Slice count[[:space:]]*:[[:space:]]*0' "$WORK/ts_slash.log" \
+	&& ok 'the folder-only set carries no slices' || bad 'the folder-only set carries no slices'
 
 echo
 if [ "$FAILED" = 0 ]; then

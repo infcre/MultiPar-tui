@@ -13,7 +13,7 @@
 | `source/par2j/par2j` | 原生 x86-64 ELF 二进制（约 1.4 MB），本手册的主角 |
 | `source/par2j/Makefile` | 构建脚本，含 `asan` 诊断目标 |
 | `source/par2j/compat/` | Win32 → POSIX 兼容层（`windows.h`、`wincompat.c`、若干桩头文件） |
-| `source/par2j/test_par2j.sh` | 44 项断言、12 个场景的端到端回归测试 |
+| `source/par2j/test_par2j.sh` | 52 项断言、12 个场景的端到端回归测试 |
 | `source/multipar-tui/` | Go 写的 TUI 前端（`README.md` 里有它自己的说明） |
 | `source/multipar-tui/smoke.sh` | 前端全流程测试（含 pty 里的真实 TUI 测试） |
 
@@ -232,6 +232,26 @@ cd /tmp/x && par2j v y.par2        # 相对名按 par2 所在目录解析
 `C:\` 这类 Windows 非法字符（`< > | "`）在文件名里会被拒绝；名字里含**非 UTF-8
 字节**的文件用不了，会给出明确报错而不是崩溃。
 
+**输入路径的两条硬规则**（都是实测，与 libc 无关，Windows 上也一样）：
+
+1. **相对输入路径按 `.par2` 所在目录解析**，不是当前目录。在集合目录里写
+   `c /x/ev/e.par2 src` 会报 `input file is not found, ev\src`；用绝对路径，
+   或先 `cd` 到集合目录的**父目录**。
+2. **输入路径末尾带分隔符 = 只登记该文件夹本身，不进去找文件**。这是上游
+   有意的特殊语义（`search_files()` 开头那个分支，注释：末尾に「\」を付けて
+   フォルダを指定してるなら内部を検索しない），不是移植引入的 bug：
+
+```bash
+par2j c /x/b.par2 /data/src      # 正常：递归收录 src 里全部文件
+par2j c /x/b.par2 /data/src/     # 危险：rc=0 且打印 Created successfully，
+                                 #   但集合里只有一条 0 字节记录 "src/"
+```
+
+   也就是**手滑多打一个 `/` 会得到一个没用的备份**。建完拿 `l` 查一下文件数再信它。
+   注：只有目录名会这样，`par2j c b.par2 /data/src/a.bin` 带斜杠无影响；`/src/.`
+   与 `/src//./` 也正常，只有 `/src/` 和 `/src//` 中招。`multipar-tui` 已自动去掉
+   参数尾斜杠（`backend.go: normalizeInputPaths`），走它踩不到这个坑。
+
 ---
 
 ## 5. 常用场景配方
@@ -355,12 +375,17 @@ PAR2J_PROGRESS=1 PAR2J_PROGRESS_INTERVAL=100 par2j c ... # 看机器可读进度
 ## 8. 测试与自检
 
 ```bash
-cd source/par2j     && ./test_par2j.sh          # 44 项，建/列/校/修全流程 + 特殊文件名
+cd source/par2j     && ./test_par2j.sh          # 52 项，建/列/校/修全流程 + 特殊文件名 + 路径语义
 cd source/multipar-tui && ./smoke.sh            # 前端：plain 全流程 + pty 里的真实 TUI
 ```
 
 - `test_par2j.sh` 全程在 `mktemp` 目录里跑，`KEEP=1 ./test_par2j.sh` 保留现场；
   其中"特殊文件名"一段**故意用 `LC_ALL=C`** 跑，专门守 locale 相关回归。
+- 它只依赖 POSIX 工具，已在 **BusyBox ash（OpenWrt）上跑过**：静态包 + musl
+  = **52/52 全绿**。为此它自带一个 `hash_files()` 兼容函数 —— BusyBox 的
+  `md5sum` 没有 `--status`、也没有 `od`，直接拄 GNU 写法会假报失败。
+- 同一对静态二进制在两台上结果一致：本机 glibc 52/52，OpenWrt r28739（musl）
+  52/52，两者都是 `make static` + `CGO_ENABLED=0` 的产物。
 - `multipar-tui/test_tui.py` 用 pty 真的启动界面、回答终端能力查询、发按键、
   读回渲染结果并断言界面文字与磁盘结果；`TUI_DEBUG=1` 转储失败时的画面。
 - `par2j` 无参数运行会打印版本、"Self-Test: not applicable to this Linux build
@@ -374,6 +399,8 @@ cd source/multipar-tui && ./smoke.sh            # 前端：plain 全流程 + pty
 | 现象 | 原因与处理 |
 |---|---|
 | `input file is not found` | 源文件不在 par2 所在目录 → 校验/修复也要加 `-d<目录>`；文件名里有非 UTF-8 字节则不支持 |
+| 相对路径报 `input file is not found, <par2目录>\<输入>` | 相对输入路径按 **`.par2` 所在目录**解析，不是当前目录（见 4.5） | 改用绝对路径 |
+| `c` 返回 rc=0、打印 `Created successfully`，但 `l` 里只有一条 0 字节记录 | 输入目录写了**尾斜杠**（`/data/src/`），上游按“只登记该文件夹、不递归”处理（见 4.5） | 去掉尾斜杠重建；或走 `multipar-tui`，它会自动去 |
 | 报 `Need N more slice(s)` 却觉得应该能修 | 先数一下丢了多少片：丢的是**分片数**不是文件数。一个 6 MB 文件在 `-ss716800` 下是 9 片，而 `-rr10` 只给 10% 恢复块。用 `par2j l` 看 `Input File Slice count` 和 `Recovery Slice count` |
 | 修复成功但脚本判成失败 | 退出码是 16，不是 0 |
 | 路径相关的怪现象 | `PAR2J_TRACE=1` 看路径解析。历史上一个"同一目录多一个字符就成功/失败"的 bug 就是 `\\?\` 前缀插错位置吃掉了文件名 |

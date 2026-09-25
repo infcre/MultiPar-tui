@@ -62,7 +62,23 @@ func (j Job) Args() []string {
 		args = append(args, "-d"+j.BaseDir)
 	}
 	args = append(args, j.ParFile)
-	return append(args, j.Inputs...)
+	for _, in := range j.Inputs {
+		args = append(args, trimDirSlash(in))
+	}
+	return args
+}
+
+// trimDirSlash drops trailing separators from an input argument.  par2j reads a
+// name ending in a separator as "record this empty folder, do not look inside"
+// (the first branch of search_files() in par2_cmd.c), which is the opposite of
+// what a trailing slash means when it came from shell completion or from
+// --inputs /data/dir/.  A bare "/" is kept so the file system root stays
+// addressable.
+func trimDirSlash(p string) string {
+	for len(p) > 1 && strings.HasSuffix(p, "/") {
+		p = p[:len(p)-1]
+	}
+	return p
 }
 
 // Event is one progress line from the stderr stream.
